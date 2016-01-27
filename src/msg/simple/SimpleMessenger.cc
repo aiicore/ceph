@@ -42,14 +42,14 @@ SimpleMessenger::SimpleMessenger(CephContext *cct, entity_name_t name,
   : SimplePolicyMessenger(cct, name,mname, _nonce),
     accepter(this, _nonce),
     dispatch_queue(cct, this),
-    reaper_thread(this),
+    reaper_thread(NULL),
     nonce(_nonce),
     lock("SimpleMessenger::lock"), need_addr(true), did_bind(false),
     global_seq(0),
     cluster_protocol(0),
     dispatch_throttler(cct, string("msgr_dispatch_throttler-") + mname,
 		       cct->_conf->ms_dispatch_throttle_bytes),
-    reaper_started(false), reaper_stop(false),
+    reaper_local_cond(), reaper_local(false),
     timeout(0),
     local_connection(new PipeConnection(cct, this))
 {
@@ -66,7 +66,6 @@ SimpleMessenger::~SimpleMessenger()
 {
   assert(!did_bind); // either we didn't bind or we shut down the Accepter
   assert(rank_pipe.empty()); // we don't have any running Pipes.
-  assert(!reaper_started); // the reaper thread is stopped
 }
 
 void SimpleMessenger::ready()
@@ -202,19 +201,6 @@ void SimpleMessenger::dispatch_throttle_release(uint64_t msize)
   }
 }
 
-void SimpleMessenger::reaper_entry()
-{
-  ldout(cct,10) << "reaper_entry start" << dendl;
-  lock.Lock();
-  while (!reaper_stop) {
-    reaper();  // may drop and retake the lock
-    if (reaper_stop)
-      break;
-    reaper_cond.Wait(lock);
-  }
-  lock.Unlock();
-  ldout(cct,10) << "reaper_entry done" << dendl;
-}
 
 /*
  * note: assumes lock is held
@@ -264,7 +250,11 @@ void SimpleMessenger::queue_reap(Pipe *pipe)
   ldout(cct,10) << "queue_reap " << pipe << dendl;
   lock.Lock();
   pipe_reap_queue.push_back(pipe);
-  reaper_cond.Signal();
+
+  // if reaper_thread was stopped, send signal to
+  // SM->wait() loop
+  if(reaper_local == true || reaper_thread->signal(this) == 0)
+    reaper_local_cond.Signal();
   lock.Unlock();
 }
 
@@ -321,6 +311,8 @@ int SimpleMessenger::start()
   assert(!started);
   started = true;
 
+  reaper_thread = ReaperThread::get();
+
   if (!did_bind) {
     my_inst.addr.nonce = nonce;
     init_local_connection();
@@ -328,8 +320,7 @@ int SimpleMessenger::start()
 
   lock.Unlock();
 
-  reaper_started = true;
-  reaper_thread.create("ms_reaper");
+  reaper_thread->start();
   return 0;
 }
 
@@ -549,17 +540,6 @@ void SimpleMessenger::wait()
     ldout(cct,20) << "wait: stopped accepter thread" << dendl;
   }
 
-  if (reaper_started) {
-    ldout(cct,20) << "wait: stopping reaper thread" << dendl;
-    lock.Lock();
-    reaper_cond.Signal();
-    reaper_stop = true;
-    lock.Unlock();
-    reaper_thread.join();
-    reaper_started = false;
-    ldout(cct,20) << "wait: stopped reaper thread" << dendl;
-  }
-
   // close+reap all pipes
   lock.Lock();
   {
@@ -572,16 +552,25 @@ void SimpleMessenger::wait()
       p->stop_and_wait();
       p->pipe_lock.Unlock();
     }
+  }
+  // this flag will change queue_reap behaviour, form now reaper thread
+  // won't be notified about pipes to reap
+  reaper_local = true;
+  lock.Unlock();
 
+  if (reaper_thread->stop(this) == 0)
+     reaper_thread->join();
+
+  lock.Lock();
+  {
     reaper();
     ldout(cct,10) << "wait: waiting for pipes " << pipes << " to close" << dendl;
     while (!pipes.empty()) {
-      reaper_cond.Wait(lock);
+      reaper_local_cond.Wait(lock);
       reaper();
     }
   }
   lock.Unlock();
-
   ldout(cct,10) << "wait: done." << dendl;
   ldout(cct,1) << "shutdown complete." << dendl;
   started = false;

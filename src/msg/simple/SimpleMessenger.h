@@ -189,14 +189,93 @@ private:
    * A thread used to tear down Pipes when they're complete.
    */
   class ReaperThread : public Thread {
-    SimpleMessenger *msgr;
+    Cond reaper_cond, stop_cond;
+    set <SimpleMessenger *> sm_set, sm_set_copy;
+    int reaper_counter;
+    Mutex lock;
+
   public:
-    ReaperThread(SimpleMessenger *m) : msgr(m) {}
+    ReaperThread()
+      : reaper_cond(),
+        stop_cond(),
+        sm_set(),
+        sm_set_copy(),
+        reaper_counter(0),
+        lock("SimpleMessenger::ReaperThread::lock::l")
+     { };
+
+    static ReaperThread *get() {
+      static ReaperThread rt;
+      return &rt;
+    }
+
+    void start() {
+      lock.Lock();
+      if (reaper_counter == 0)
+        create("ms_reaper");
+      reaper_counter++;
+      lock.Unlock();
+    }
+
+    int stop(SimpleMessenger *s) {
+      Mutex::Locker locker(lock);
+
+      // SM is stopping and we need to remove it from set, because reaper() will be 
+      // fired locally in SM->wait()
+      sm_set.erase(s);
+      reaper_counter--;
+
+      // if reaper() from this SM is running, we need to wait for it
+      while(sm_set_copy.count(s))
+        stop_cond.Wait(lock);
+
+      // triger entry() loop, if it is the last SM, thread will end
+      reaper_cond.Signal();
+      return reaper_counter;
+    }
+
+    int signal(SimpleMessenger *m) {
+      Mutex::Locker locker(lock);
+      if (reaper_counter) {
+        sm_set.insert(m);
+        reaper_cond.Signal();
+      }
+      return reaper_counter;
+    }
+
     void *entry() {
-      msgr->reaper_entry();
+      do {
+        lock.Lock();
+
+        // trigger wait loop in stop() for non last SM
+        stop_cond.Signal();
+
+        if(reaper_counter)
+          reaper_cond.Wait(lock);
+
+        // create copy of SM pointer set, so we could release lock earilier
+        // sm_set will be accessible, and other pipes from other SM could
+        // add themselves and fire signal to trigger this loop
+        sm_set_copy.swap(sm_set);
+        lock.Unlock();
+
+        for(set<SimpleMessenger *>::iterator smIt = sm_set_copy.begin(); smIt != sm_set_copy.end(); smIt++) {
+            if(*smIt) {
+                (*smIt)->lock.Lock();
+                (*smIt)->reaper();
+                (*smIt)->lock.Unlock();
+            }
+        }
+        sm_set_copy.clear();
+      } while(reaper_counter);
+
+      // trigger wait loop in stop() for last SM
+      lock.Lock();
+      stop_cond.Signal();
+      lock.Unlock();
       return 0;
     }
-  } reaper_thread;
+  } *reaper_thread;
 
   /**
    * @} // Inner classes
@@ -308,8 +387,8 @@ private:
   /// Throttle preventing us from building up a big backlog waiting for dispatch
   Throttle dispatch_throttler;
 
-  bool reaper_started, reaper_stop;
-  Cond reaper_cond;
+  Cond reaper_local_cond;
+  bool reaper_local;
 
   /// This Cond is slept on by wait() and signaled by dispatch_entry()
   Cond  wait_cond;
