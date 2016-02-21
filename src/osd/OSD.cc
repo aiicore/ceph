@@ -1637,8 +1637,25 @@ void cls_initialize(ClassHandler *ch);
 
 void OSD::handle_signal(int signum)
 {
-  assert(signum == SIGINT || signum == SIGTERM);
+  static bool first_sigusr1 = true;
+
+  assert(signum == SIGINT || signum == SIGTERM || signum == SIGUSR1);
   derr << "*** Got signal " << sig_str(signum) << " ***" << dendl;
+
+  if (signum == SIGUSR1 && monc && first_sigusr1) {
+    first_sigusr1 = false;
+    OSDMapRef osdmap = get_osdmap();
+    if (osdmap && osdmap->is_up(whoami)) {
+      monc->send_mon_message(
+          new MOSDMarkMeDown(monc->get_fsid(),
+                             osdmap->get_inst(whoami),
+                             osdmap->get_epoch(),
+                             true //wait for ack
+                             )
+      );
+    }
+    return;
+  }
   shutdown();
 }
 

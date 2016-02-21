@@ -617,6 +617,7 @@ int main(int argc, const char **argv)
   // install signal handlers
   init_async_signal_handler();
   register_async_signal_handler(SIGHUP, sighup_handler);
+  register_async_signal_handler(SIGUSR1, handle_osd_signal);
   register_async_signal_handler_oneshot(SIGINT, handle_osd_signal);
   register_async_signal_handler_oneshot(SIGTERM, handle_osd_signal);
 
@@ -633,6 +634,7 @@ int main(int argc, const char **argv)
   ms_objecter->wait();
 
   unregister_async_signal_handler(SIGHUP, sighup_handler);
+  unregister_async_signal_handler(SIGUSR1, handle_osd_signal);
   unregister_async_signal_handler(SIGINT, handle_osd_signal);
   unregister_async_signal_handler(SIGTERM, handle_osd_signal);
   shutdown_async_signal_handler();

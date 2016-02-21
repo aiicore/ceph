@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include <sstream>
 #include <time.h>
+#include <signal.h>
 
 namespace ceph {
   static CephContext *g_assert_context = NULL;
@@ -46,6 +47,10 @@ namespace ceph {
   void __ceph_assert_fail(const char *assertion, const char *file, int line,
 			  const char *func)
   {
+    kill(getpid(), SIGUSR1);
+    utime_t t(1, 500000000); // 500ms
+    t.sleep();
+
     ostringstream tss;
     tss << ceph_clock_now(g_assert_context);
 
@@ -81,6 +86,10 @@ namespace ceph {
   void __ceph_assertf_fail(const char *assertion, const char *file, int line,
 			   const char *func, const char* msg, ...)
   {
+    kill(getpid(), SIGUSR1);
+    utime_t t(1, 500000000); // 500ms
+    t.sleep();
+
     ostringstream tss;
     tss << ceph_clock_now(g_assert_context);
 
