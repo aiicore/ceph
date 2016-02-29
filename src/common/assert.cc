@@ -47,9 +47,23 @@ namespace ceph {
   void __ceph_assert_fail(const char *assertion, const char *file, int line,
 			  const char *func)
   {
-    kill(getpid(), SIGUSR1);
-    utime_t t(1, 500000000); // 500ms
-    t.sleep();
+    char sig_thread_name[16] = { 0 };
+    const sigval sv = { .sival_ptr = sig_thread_name };
+
+    pthread_getname_np(pthread_self(), sig_thread_name, sizeof(sig_thread_name));
+    sigqueue(getpid(), SIGUSR1, sv);
+
+    // sigset_t newset, oldset;
+
+    // sigemptyset(&newset);
+    // sigaddset(&newset, SIGUSR2);
+    // pthread_sigmask(SIG_BLOCK, &newset, &oldset);
+
+    // wait
+    // printf("\n\nWait on signal\n\n");
+    // sigwaitinfo(&newset, NULL);
+    // printf("\n\nGot it!\n\n");
+
 
     ostringstream tss;
     tss << ceph_clock_now(g_assert_context);

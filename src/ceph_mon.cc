@@ -51,7 +51,7 @@ using namespace std;
 
 Monitor *mon = NULL;
 
-void handle_mon_signal(int signum)
+void handle_mon_signal(int signum, siginfo_t *info)
 {
   if (mon)
     mon->handle_signal(signum);

@@ -1635,26 +1635,31 @@ OSD::~OSD()
 
 void cls_initialize(ClassHandler *ch);
 
-void OSD::handle_signal(int signum)
+void OSD::handle_signal(int signum, siginfo_t *info)
 {
   static bool first_sigusr1 = true;
 
   assert(signum == SIGINT || signum == SIGTERM || signum == SIGUSR1);
+
   derr << "*** Got signal " << sig_str(signum) << " ***" << dendl;
 
-  if (signum == SIGUSR1 && monc && first_sigusr1) {
-    first_sigusr1 = false;
-    OSDMapRef osdmap = get_osdmap();
-    if (osdmap && osdmap->is_up(whoami)) {
-      monc->send_mon_message(
-          new MOSDMarkMeDown(monc->get_fsid(),
-                             osdmap->get_inst(whoami),
-                             osdmap->get_epoch(),
-                             true //wait for ack
-                             )
-      );
+  if (signum == SIGUSR1 && info->si_pid == getpid() && info->si_value.sival_ptr) {
+    derr << "*** Get signal from: " << (char *) info->si_value.sival_ptr  << dendl;
+
+    if (monc && first_sigusr1) {
+      first_sigusr1 = false;
+      OSDMapRef osdmap = get_osdmap();
+      if (osdmap && osdmap->is_up(whoami)) {
+        monc->send_mon_message(
+            new MOSDMarkMeDown(monc->get_fsid(),
+                               osdmap->get_inst(whoami),
+                               osdmap->get_epoch(),
+                               true //wait for ack
+                               )
+        );
+      }
+      return;
     }
-    return;
   }
   shutdown();
 }

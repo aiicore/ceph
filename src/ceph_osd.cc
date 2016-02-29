@@ -62,10 +62,10 @@ TracepointProvider::Traits os_tracepoint_traits("libos_tp.so",
 
 OSD *osd = NULL;
 
-void handle_osd_signal(int signum)
+void handle_osd_signal(int signum, siginfo_t *info)
 {
   if (osd)
-    osd->handle_signal(signum);
+    osd->handle_signal(signum, info);
 }
 
 void usage() 
