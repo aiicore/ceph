@@ -45,12 +45,15 @@ namespace ceph {
     g_assert_context = cct;
   }
 
+  static Mutex lock;
+
   void assert_release_lock() {
+    dout_emergency("\n\nReleasing assrt lock.\n\n");
     return;
   }
 
   void assert_wait_lock() {
-    sleep(5);
+    dout_emergency("\n\nSetting assert lock.\n\n");
     return;
   }
 
