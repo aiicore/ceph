@@ -2358,6 +2358,7 @@ public:
   void suicide(int exitcode);
   int shutdown();
 
+  void handle_signal(int signum);
   void handle_signal(int signum, siginfo_t *info);
 
   /// check if we can throw out op from a disconnected client

@@ -50,9 +50,17 @@ void queue_async_signal(int signum);
 
 /// install a safe, async, callback for the given signal
 void register_async_signal_handler(int signum, signal_handler_info_t handler);
+void register_async_signal_handler(int signum, signal_handler_t handler);
 void register_async_signal_handler_oneshot(int signum, signal_handler_info_t handler);
+void register_async_signal_handler_oneshot(int signum, signal_handler_t handler);
 
 /// uninstall a safe async signal callback
 void unregister_async_signal_handler(int signum, signal_handler_info_t handler);
+void unregister_async_signal_handler(int signum, signal_handler_t handler);
+
+struct sig_pthread_info {
+  pthread_t p_id;
+  char name[16];
+};
 
 #endif

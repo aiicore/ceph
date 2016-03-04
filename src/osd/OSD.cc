@@ -1635,19 +1635,33 @@ OSD::~OSD()
 
 void cls_initialize(ClassHandler *ch);
 
+void OSD::handle_signal(int signum)
+{
+  assert(signum == SIGINT || signum == SIGTERM);
+  derr << "*** Got signal " << sig_str(signum) << " ***" << dendl;
+  shutdown();
+}
+
 void OSD::handle_signal(int signum, siginfo_t *info)
 {
-  static bool first_sigusr1 = true;
-
-  assert(signum == SIGINT || signum == SIGTERM || signum == SIGUSR1);
+  assert(signum == SIGUSR1);
 
   derr << "*** Got signal " << sig_str(signum) << " ***" << dendl;
 
   if (signum == SIGUSR1 && info->si_pid == getpid() && info->si_value.sival_ptr) {
-    derr << "*** Get signal from: " << (char *) info->si_value.sival_ptr  << dendl;
 
-    if (monc && first_sigusr1) {
-      first_sigusr1 = false;
+    sig_pthread_info *p;
+
+    p = (sig_pthread_info *) info->si_value.sival_ptr;
+
+    if (pthread_self() == p->p_id) {
+      derr << "*** Loop singal detected, ignoring. ***" << dendl;
+      return;
+    }
+
+    derr << "*** Got signal from: " << p->name << ", pthread_t: " << p->p_id << dendl;
+
+    if (monc) {
       OSDMapRef osdmap = get_osdmap();
       if (osdmap && osdmap->is_up(whoami)) {
         monc->send_mon_message(
@@ -1658,10 +1672,8 @@ void OSD::handle_signal(int signum, siginfo_t *info)
                                )
         );
       }
-      return;
     }
   }
-  shutdown();
 }
 
 int OSD::pre_init()
@@ -5513,6 +5525,8 @@ bool OSD::heartbeat_dispatch(Message *m)
 bool OSD::ms_dispatch(Message *m)
 {
   if (m->get_type() == MSG_OSD_MARK_ME_DOWN) {
+    assert_release_lock();
+
     service.got_stop_ack();
     m->put();
     return true;

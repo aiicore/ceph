@@ -511,7 +511,7 @@ static void signal_fd_finalize()
   close(signal_fd[1]);
 }
 
-static void handle_sigterm(int signum, siginfo_t *info)
+static void handle_sigterm(int signum)
 {
   dout(1) << __func__ << dendl;
   FCGX_ShutdownPending();

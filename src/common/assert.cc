@@ -18,6 +18,7 @@
 #include "common/debug.h"
 #include "common/Clock.h"
 #include "include/assert.h"
+#include "global/signal_handler.h"
 
 #include <errno.h>
 #include <iostream>
@@ -44,26 +45,48 @@ namespace ceph {
     g_assert_context = cct;
   }
 
+  void assert_release_lock() {
+    return;
+  }
+
+  void assert_wait_lock() {
+    sleep(5);
+    return;
+  }
+
   void __ceph_assert_fail(const char *assertion, const char *file, int line,
 			  const char *func)
   {
-    char sig_thread_name[16] = { 0 };
-    const sigval sv = { .sival_ptr = sig_thread_name };
+    sig_pthread_info p;
+    const sigval sv = { .sival_ptr = (void *) &p };
 
-    pthread_getname_np(pthread_self(), sig_thread_name, sizeof(sig_thread_name));
-    sigqueue(getpid(), SIGUSR1, sv);
+    p.p_id = pthread_self();
+    pthread_getname_np(p.p_id, p.name, sizeof(p.name));
 
-    // sigset_t newset, oldset;
+    if (sigqueue(getpid(), SIGUSR1, sv) == 0) {
+      // sended ok, so we can wait for responce
+      assert_wait_lock();
+    }
 
-    // sigemptyset(&newset);
-    // sigaddset(&newset, SIGUSR2);
-    // pthread_sigmask(SIG_BLOCK, &newset, &oldset);
+    /*
+    sigset_t newset, oldset;
+    sigemptyset(&newset);
+    sigaddset(&newset, SIGUSR2);
+    pthread_sigmask(SIG_BLOCK, &newset, &oldset);
 
-    // wait
-    // printf("\n\nWait on signal\n\n");
-    // sigwaitinfo(&newset, NULL);
-    // printf("\n\nGot it!\n\n");
+    siginfo_t si;
 
+    char buf[8096] = { 0 };
+
+    dout_emergency("\n\nBEFORE WAIT\n\n");
+    sigwaitinfo(&newset, &si);
+    dout_emergency("\n\nAFTER WAIT\n\n");
+
+    if(si.si_pid == getpid()) {
+      // ok, otherwise back to sigwaitinfo
+      dout_emergency("\n\nPID MATCH\n\n");
+    }
+    */
 
     ostringstream tss;
     tss << ceph_clock_now(g_assert_context);
@@ -76,6 +99,7 @@ namespace ceph {
 	     file, func, (unsigned long long)pthread_self(), tss.str().c_str(),
 	     file, line, assertion);
     dout_emergency(buf);
+
 
     // TODO: get rid of this memory allocation.
     ostringstream oss;
@@ -103,6 +127,8 @@ namespace ceph {
     kill(getpid(), SIGUSR1);
     utime_t t(1, 500000000); // 500ms
     t.sleep();
+
+    dout_emergency("HERE, second proc\n");
 
     ostringstream tss;
     tss << ceph_clock_now(g_assert_context);
@@ -150,6 +176,9 @@ namespace ceph {
     va_end(args);
     ba.printf("\n");
     dout_emergency(buf);
+
+    dout_emergency("HERE, second proc\n");
+
 
     // TODO: get rid of this memory allocation.
     ostringstream oss;

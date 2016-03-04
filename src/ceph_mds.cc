@@ -81,7 +81,7 @@ static int parse_rank(const char *opt_name, const std::string &val)
 MDSDaemon *mds = NULL;
 
 
-static void handle_mds_signal(int signum, siginfo_t *info)
+static void handle_mds_signal(int signum)
 {
   if (mds)
     mds->handle_signal(signum);

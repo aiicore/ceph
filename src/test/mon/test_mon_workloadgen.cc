@@ -930,7 +930,7 @@ struct C_Shutdown : public Context
   }
 };
 
-void handle_test_signal(int signum, siginfo_t *info)
+void handle_test_signal(int signum)
 {
   if ((signum != SIGINT) && (signum != SIGTERM))
     return;
